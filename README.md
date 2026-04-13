@@ -1,3 +1,3 @@
-# Fullstack Template
+# 7 Wonders
 
-A NextJS Frontend and FastAPI Backend template to hit the ground running instantly
+[Card List](https://7-wonders.fandom.com/wiki/List_of_Cards?file=Age-1.png#4_Player)
