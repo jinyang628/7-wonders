@@ -8,21 +8,33 @@ class Card(BaseModel):
     age: Age
     coin_cost: int = Field(default=0, description="The cost of the card in coins")
     resource_cost: dict[Resource, int] = Field(
-        default=dict, description="The cost of the card in resources"
+        default_factory=dict, description="The cost of the card in resources"
     )
 
 
+class ResourceProduced(BaseModel):
+    pass
+
+
+class FixedResource(ResourceProduced):
+    resource: Resource
+
+
+class ChoiceResource(ResourceProduced):
+    resources: list[Resource]
+
+
 class BrownCard(Card):
-    resource_produced: Resource
+    resource_produced: list[ResourceProduced]
 
 
 class GreyCard(Card):
-    resource_produced: Resource
+    resource_produced: list[ResourceProduced]
 
 
 class BlueCard(Card):
     victory_points: int = Field(
-        default=0, description="The number of victory points the card earns"
+        description="The number of victory points the card earns"
     )
 
 
