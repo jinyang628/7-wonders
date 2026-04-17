@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from app.constants.game.cards import Resource
+from app.models.cards import Card
 
 
 class Direction(StrEnum):
@@ -52,3 +53,17 @@ class PlayerPositionState:
 class TradeCost:
     amount: int
     cost: int
+
+
+@dataclass
+class PurchaseOption:
+    coin_cost: int
+    trade: dict[str, TradeCost]
+    method: str
+
+
+@dataclass
+class CardPurchaseOptions:
+    card: Card
+    options: list[PurchaseOption]
+    is_purchasable: bool

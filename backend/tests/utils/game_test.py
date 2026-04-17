@@ -3,7 +3,9 @@ import pytest
 from app.constants.game.cards import Resource
 from app.constants.game.utils import (PlayerTradeState, TradeCost,
                                       TradeRelationship)
+from app.models.cards import ChoiceResource, FixedResource
 from app.utils.game import (_get_trade_combinations_without_cost,
+                            _resolve_resource_permutations,
                             get_trade_combinations_with_cost)
 
 """
@@ -256,3 +258,128 @@ def test_trade_cost_fields():
     )
     result = get_trade_combinations_with_cost(state, Resource.WOOD, 3)
     assert result == [{"player1": TradeCost(amount=3, cost=6)}]
+
+
+"""
+
+Tests for _resolve_resource_permutations
+
+"""
+
+# --- Only fixed resources ---
+
+
+def test_single_fixed_resource():
+    result = _resolve_resource_permutations([FixedResource(resource=Resource.WOOD)])
+    assert result == [{Resource.WOOD: 1}]
+
+
+def test_multiple_fixed_resources():
+    result = _resolve_resource_permutations(
+        [
+            FixedResource(resource=Resource.WOOD),
+            FixedResource(resource=Resource.STONE),
+        ]
+    )
+    assert result == [{Resource.WOOD: 1, Resource.STONE: 1}]
+
+
+def test_duplicate_fixed_resources_are_summed():
+    result = _resolve_resource_permutations(
+        [
+            FixedResource(resource=Resource.WOOD),
+            FixedResource(resource=Resource.WOOD),
+        ]
+    )
+    assert result == [{Resource.WOOD: 2}]
+
+
+def test_empty_input():
+    result = _resolve_resource_permutations([])
+    assert result == [{}]
+
+
+# --- Only choice resources ---
+
+
+def test_single_choice_resource():
+    result = _resolve_resource_permutations(
+        [
+            ChoiceResource(resources=[Resource.WOOD, Resource.STONE]),
+        ]
+    )
+    assert len(result) == 2
+    assert {Resource.WOOD: 1} in result
+    assert {Resource.STONE: 1} in result
+
+
+def test_two_choice_resources_produce_cartesian_product():
+    result = _resolve_resource_permutations(
+        [
+            ChoiceResource(resources=[Resource.WOOD, Resource.STONE]),
+            ChoiceResource(resources=[Resource.GLASS, Resource.CLOTH]),
+        ]
+    )
+    assert len(result) == 4
+    assert {Resource.WOOD: 1, Resource.GLASS: 1} in result
+    assert {Resource.WOOD: 1, Resource.CLOTH: 1} in result
+    assert {Resource.STONE: 1, Resource.GLASS: 1} in result
+    assert {Resource.STONE: 1, Resource.CLOTH: 1} in result
+
+
+def test_choice_resource_with_same_option_twice():
+    """Both slots resolve to the same resource — should sum to 2."""
+    result = _resolve_resource_permutations(
+        [
+            ChoiceResource(resources=[Resource.WOOD, Resource.STONE]),
+            ChoiceResource(resources=[Resource.WOOD, Resource.ORE]),
+        ]
+    )
+    assert {Resource.WOOD: 2} in result
+    assert {Resource.WOOD: 1, Resource.STONE: 1} in result  # STONE + WOOD (from slot 2)
+    assert {Resource.WOOD: 1, Resource.ORE: 1} in result  # WOOD (from slot 1) + ORE
+    assert {Resource.STONE: 1, Resource.ORE: 1} in result
+
+
+# --- Mixed fixed and choice resources ---
+
+
+def test_fixed_and_single_choice():
+    result = _resolve_resource_permutations(
+        [
+            FixedResource(resource=Resource.ORE),
+            ChoiceResource(resources=[Resource.WOOD, Resource.STONE]),
+        ]
+    )
+    assert len(result) == 2
+    assert {Resource.ORE: 1, Resource.WOOD: 1} in result
+    assert {Resource.ORE: 1, Resource.STONE: 1} in result
+
+
+def test_fixed_and_choice_overlap():
+    """Fixed WOOD + choice WOOD/STONE — one permutation should give WOOD: 2."""
+    result = _resolve_resource_permutations(
+        [
+            FixedResource(resource=Resource.WOOD),
+            ChoiceResource(resources=[Resource.WOOD, Resource.STONE]),
+        ]
+    )
+    assert {Resource.WOOD: 2} in result
+    assert {Resource.WOOD: 1, Resource.STONE: 1} in result
+
+
+def test_multiple_fixed_and_multiple_choice():
+    result = _resolve_resource_permutations(
+        [
+            FixedResource(resource=Resource.ORE),
+            FixedResource(resource=Resource.CLAY),
+            ChoiceResource(resources=[Resource.WOOD, Resource.STONE]),
+            ChoiceResource(resources=[Resource.GLASS, Resource.PAPYRUS]),
+        ]
+    )
+    assert len(result) == 4
+    base = {Resource.ORE: 1, Resource.CLAY: 1}
+    assert {**base, Resource.WOOD: 1, Resource.GLASS: 1} in result
+    assert {**base, Resource.WOOD: 1, Resource.PAPYRUS: 1} in result
+    assert {**base, Resource.STONE: 1, Resource.GLASS: 1} in result
+    assert {**base, Resource.STONE: 1, Resource.PAPYRUS: 1} in result

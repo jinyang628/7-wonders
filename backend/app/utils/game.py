@@ -1,6 +1,11 @@
+from itertools import product
+
 from app.constants.game.cards import Resource
-from app.constants.game.utils import (PlayerTradeState, TradeCost,
+from app.constants.game.utils import (CardPurchaseOptions, PlayerTradeState,
+                                      PurchaseOption, TradeCost,
                                       TradeRelationship)
+from app.models.cards import (Card, ChoiceResource, FixedResource,
+                              ResourceProduced)
 
 
 def _get_trade_combinations_without_cost(
@@ -84,30 +89,162 @@ def get_trade_combinations_with_cost(
     return result
 
 
-# from app.models.cards import Card, FixedResource, ResourceProduced
-# from app.constants.game.cards import CHAINING, Resource
+def _resolve_resource_permutations(
+    produced: list[ResourceProduced],
+) -> list[dict[Resource, int]]:
+    """
+    Expands all choice resources into every possible fixed resource pool.
+    e.g. [FixedResource(WOOD), ChoiceResource([STONE, ORE])]
+      -> [{WOOD:1, STONE:1}, {WOOD:1, ORE:1}]
+    """
+    fixed: dict[Resource, int] = {}
+    choice_slots: list[list[Resource]] = []
 
-# """
-# Returns a dictionary of purchase options for each card.
-# Key is the card id, value is the purchase options illustrated in get_purchase_options.
-# """
+    for p in produced:
+        if isinstance(p, FixedResource):
+            fixed[p.resource] = fixed.get(p.resource, 0) + 1
+        elif isinstance(p, ChoiceResource):
+            choice_slots.append(p.resources)
+
+    if not choice_slots:
+        return [fixed]
+
+    permutations = []
+    for combo in product(*choice_slots):
+        pool = dict(fixed)
+        for resource in combo:
+            pool[resource] = pool.get(resource, 0) + 1
+        permutations.append(pool)
+
+    return permutations
 
 
-# def get_purchase_options_for_each_card(
-#     cards: list[Card],
-#     existing_resources: dict[ResourceProduced, int],
-#     neighbor_existing_resources: dict[str, dict[ResourceProduced, int]],
-#     existing_coins: int,
-# ) -> dict[str, list[dict[str, int]]]:
-#     result: dict[str, list[dict[str, int]]] = {}
-#     for card in cards:
-#         result[card.id] = get_purchase_options(
-#             existing_resources,
-#             neighbor_existing_resources,
-#             existing_coins,
-#             card,
-#         )
-#     return result
+def _can_cover_cost_with_pool(
+    resource_cost: dict[Resource, int],
+    pool: dict[Resource, int],
+) -> bool:
+    return all(pool.get(r, 0) >= amt for r, amt in resource_cost.items())
+
+
+def _get_trade_options_for_remaining(
+    remaining_cost: dict[Resource, int],
+    trade_state: PlayerTradeState,
+) -> list[dict[str, TradeCost]]:
+    """
+    Returns all trade combinations that together cover the remaining_cost.
+    Handles multiple resources by taking the cartesian product of per-resource options.
+    """
+    per_resource_options: list[list[dict[str, TradeCost]]] = []
+
+    for resource, count in remaining_cost.items():
+        options = get_trade_combinations_with_cost(trade_state, resource, count)
+        if not options:
+            return []  # this resource can't be sourced at all
+        per_resource_options.append(options)
+
+    # Merge one option per resource into a single trade plan
+    merged_options = []
+    for combo in product(*per_resource_options):
+        merged: dict[str, TradeCost] = {}
+        for trade in combo:
+            for neighbor_id, trade_cost in trade.items():
+                if neighbor_id in merged:
+                    merged[neighbor_id] = TradeCost(
+                        amount=merged[neighbor_id].amount + trade_cost.amount,
+                        cost=merged[neighbor_id].cost + trade_cost.cost,
+                    )
+                else:
+                    merged[neighbor_id] = trade_cost
+        merged_options.append(merged)
+
+    return merged_options
+
+
+def get_purchase_options_for_card(
+    card: Card,
+    own_resources: list[ResourceProduced],
+    trade_state: PlayerTradeState,
+    coins: int,
+    chain_cards: set[str],  # card names that grant a free build
+) -> CardPurchaseOptions:
+    options: list[PurchaseOption] = []
+
+    # 1. Chain / free build
+    if card.name in chain_cards:
+        options.append(PurchaseOption(coin_cost=0, trade={}, method="chain"))
+
+    # 2. Coin-only cost (no resource cost)
+    if not card.resource_cost and card.coin_cost > 0 and coins >= card.coin_cost:
+        options.append(
+            PurchaseOption(coin_cost=card.coin_cost, trade={}, method="coin")
+        )
+
+    # 3. Free (own resources cover everything, card.coin_cost still applies)
+    if card.resource_cost and coins >= card.coin_cost:
+        for pool in _resolve_resource_permutations(own_resources):
+            if _can_cover_cost_with_pool(card.resource_cost, pool):
+                options.append(
+                    PurchaseOption(coin_cost=card.coin_cost, trade={}, method="free")
+                )
+                break  # one free option is enough — permutations are interchangeable
+
+    # 4. Trade (own resources cover part, buy the rest from neighbors)
+    if card.resource_cost and coins >= card.coin_cost:
+        for pool in _resolve_resource_permutations(own_resources):
+            remaining = {
+                r: max(0, amt - pool.get(r, 0))
+                for r, amt in card.resource_cost.items()
+                if amt - pool.get(r, 0) > 0
+            }
+            if not remaining:
+                continue  # already handled by "free" branch
+
+            trade_options = _get_trade_options_for_remaining(remaining, trade_state)
+            for trade in trade_options:
+                trade_total = sum(tc.cost for tc in trade.values())
+                total_coins = card.coin_cost + trade_total
+                if coins >= total_coins:
+                    options.append(
+                        PurchaseOption(
+                            coin_cost=total_coins,
+                            trade=trade,
+                            method="trade",
+                        )
+                    )
+
+    # Deduplicate — same trade plan can appear from different choice resource permutations
+    seen = set()
+    unique_options = []
+    for opt in options:
+        key = (
+            opt.method,
+            opt.coin_cost,
+            frozenset((n, tc.amount, tc.cost) for n, tc in opt.trade.items()),
+        )
+        if key not in seen:
+            seen.add(key)
+            unique_options.append(opt)
+
+    return CardPurchaseOptions(
+        card=card,
+        options=unique_options,
+        is_purchasable=bool(unique_options),
+    )
+
+
+def get_purchase_options_for_each_card(
+    cards: list[Card],
+    own_resources: list[ResourceProduced],
+    trade_state: PlayerTradeState,
+    coins: int,
+    chain_cards: set[str],
+) -> list[CardPurchaseOptions]:
+    return [
+        get_purchase_options_for_card(
+            card, own_resources, trade_state, coins, chain_cards
+        )
+        for card in cards
+    ]
 
 
 # """
