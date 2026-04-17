@@ -5,6 +5,7 @@ from app.constants.game.utils import (PlayerTradeState, TradeCost,
                                       TradeRelationship)
 from app.models.cards import ChoiceResource, FixedResource
 from app.utils.game import (_get_trade_combinations_without_cost,
+                            _get_trade_options_for_remaining,
                             _resolve_resource_permutations,
                             get_trade_combinations_with_cost)
 
@@ -383,3 +384,149 @@ def test_multiple_fixed_and_multiple_choice():
     assert {**base, Resource.WOOD: 1, Resource.PAPYRUS: 1} in result
     assert {**base, Resource.STONE: 1, Resource.GLASS: 1} in result
     assert {**base, Resource.STONE: 1, Resource.PAPYRUS: 1} in result
+
+
+"""
+
+Tests for _get_trade_options_for_remaining
+
+"""
+
+
+def test_single_unit_from_left(no_discount_state):
+    result = _get_trade_options_for_remaining({Resource.WOOD: 1}, no_discount_state)
+    assert {"player1": TradeCost(amount=1, cost=2)} in result
+    assert {"player3": TradeCost(amount=1, cost=2)} in result
+    assert len(result) == 2
+
+
+def test_single_unit_discounted_from_left(left_discount_state):
+    result = _get_trade_options_for_remaining({Resource.WOOD: 1}, left_discount_state)
+    assert {"player1": TradeCost(amount=1, cost=1)} in result
+    assert {"player3": TradeCost(amount=1, cost=2)} in result
+
+
+def test_two_units_from_left_only(no_discount_state):
+    """player3 only has 1 WOOD, so taking 2 must come entirely from player1."""
+    result = _get_trade_options_for_remaining({Resource.WOOD: 2}, no_discount_state)
+    assert {"player1": TradeCost(amount=2, cost=4)} in result
+    assert {
+        "player1": TradeCost(amount=1, cost=2),
+        "player3": TradeCost(amount=1, cost=2),
+    } in result
+    assert len(result) == 2
+
+
+def test_two_units_discounted_split(left_discount_state):
+    """Taking 1 from discounted left (cost=1) + 1 from right (cost=2) = total 3."""
+    result = _get_trade_options_for_remaining({Resource.WOOD: 2}, left_discount_state)
+    assert {
+        "player1": TradeCost(amount=1, cost=1),
+        "player3": TradeCost(amount=1, cost=2),
+    } in result
+    assert {
+        "player1": TradeCost(amount=2, cost=2)
+    } in result  # both from discounted left
+
+
+# --- Multiple resources remaining ---
+
+
+def test_two_resources_merged_on_same_neighbor(no_discount_state):
+    """
+    Add ORE to player1 so both WOOD and ORE come from player1.
+    Costs should be merged into a single TradeCost, not two entries.
+    """
+    state = PlayerTradeState(
+        player_id="player2",
+        trade_costs={
+            "player1": TradeRelationship(base_cost=2),
+            "player3": TradeRelationship(base_cost=2),
+        },
+        available_resources={
+            "player1": {Resource.WOOD: 2, Resource.ORE: 1},
+            "player3": {Resource.WOOD: 1},
+        },
+    )
+    result = _get_trade_options_for_remaining(
+        {Resource.WOOD: 1, Resource.ORE: 1}, state
+    )
+    merged = next(
+        (
+            r
+            for r in result
+            if set(r.keys()) == {"player1"} and r["player1"].amount == 2
+        ),
+        None,
+    )
+    assert merged is not None
+    assert merged["player1"].cost == 4
+
+
+def test_two_resources_from_different_neighbors(no_discount_state):
+    """WOOD from player3, ORE only available at player1."""
+    state = PlayerTradeState(
+        player_id="player2",
+        trade_costs={
+            "player1": TradeRelationship(base_cost=2),
+            "player3": TradeRelationship(base_cost=2),
+        },
+        available_resources={
+            "player1": {Resource.WOOD: 2, Resource.ORE: 1},
+            "player3": {Resource.WOOD: 1},
+        },
+    )
+    result = _get_trade_options_for_remaining(
+        {Resource.WOOD: 1, Resource.ORE: 1}, state
+    )
+    assert {
+        "player1": TradeCost(amount=1, cost=2),
+        "player3": TradeCost(amount=1, cost=2),
+    } in result
+
+
+# --- Infeasible cases ---
+
+
+def test_returns_empty_when_resource_unavailable(no_discount_state):
+    result = _get_trade_options_for_remaining({Resource.GLASS: 1}, no_discount_state)
+    assert result == []
+
+
+def test_returns_empty_when_count_exceeds_total_supply(no_discount_state):
+    """player1 has 2 WOOD, player3 has 1 — asking for 4 is impossible."""
+    result = _get_trade_options_for_remaining({Resource.WOOD: 4}, no_discount_state)
+    assert result == []
+
+
+def test_returns_empty_when_one_resource_of_two_unavailable(no_discount_state):
+    """WOOD is available but GLASS is not — entire result should be empty."""
+    result = _get_trade_options_for_remaining(
+        {Resource.WOOD: 1, Resource.GLASS: 1}, no_discount_state
+    )
+    assert result == []
+
+
+# --- Edge cases ---
+
+
+def test_empty_remaining_cost_returns_empty_trade(no_discount_state):
+    result = _get_trade_options_for_remaining({}, no_discount_state)
+    assert result == [{}]
+
+
+def test_discount_does_not_apply_to_non_discounted_resource(left_discount_state):
+    """GLASS is not in discounted_resources — player1 should charge base_cost."""
+    state = PlayerTradeState(
+        player_id="player2",
+        trade_costs={
+            "player1": TradeRelationship(
+                base_cost=2,
+                discounted_resources={Resource.WOOD},
+                discount_cost=1,
+            ),
+        },
+        available_resources={"player1": {Resource.GLASS: 1}},
+    )
+    result = _get_trade_options_for_remaining({Resource.GLASS: 1}, state)
+    assert result == [{"player1": TradeCost(amount=1, cost=2)}]

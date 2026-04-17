@@ -2,8 +2,8 @@ from itertools import product
 
 from app.constants.game.cards import Resource
 from app.constants.game.utils import (CardPurchaseOptions, PlayerTradeState,
-                                      PurchaseOption, TradeCost,
-                                      TradeRelationship)
+                                      PurchaseMethod, PurchaseOption,
+                                      TradeCost, TradeRelationship)
 from app.models.cards import (Card, ChoiceResource, FixedResource,
                               ResourceProduced)
 
@@ -160,23 +160,26 @@ def _get_trade_options_for_remaining(
     return merged_options
 
 
-def get_purchase_options_for_card(
+def _get_purchase_options_for_card(
     card: Card,
     own_resources: list[ResourceProduced],
     trade_state: PlayerTradeState,
     coins: int,
-    chain_cards: set[str],  # card names that grant a free build
+    chain_cards: set[str],
 ) -> CardPurchaseOptions:
     options: list[PurchaseOption] = []
 
-    # 1. Chain / free build
     if card.name in chain_cards:
-        options.append(PurchaseOption(coin_cost=0, trade={}, method="chain"))
+        options.append(
+            PurchaseOption(coin_cost=0, trade={}, method=PurchaseMethod.CHAIN)
+        )
 
     # 2. Coin-only cost (no resource cost)
     if not card.resource_cost and card.coin_cost > 0 and coins >= card.coin_cost:
         options.append(
-            PurchaseOption(coin_cost=card.coin_cost, trade={}, method="coin")
+            PurchaseOption(
+                coin_cost=card.coin_cost, trade={}, method=PurchaseMethod.COIN
+            )
         )
 
     # 3. Free (own resources cover everything, card.coin_cost still applies)
@@ -184,7 +187,9 @@ def get_purchase_options_for_card(
         for pool in _resolve_resource_permutations(own_resources):
             if _can_cover_cost_with_pool(card.resource_cost, pool):
                 options.append(
-                    PurchaseOption(coin_cost=card.coin_cost, trade={}, method="free")
+                    PurchaseOption(
+                        coin_cost=card.coin_cost, trade={}, method=PurchaseMethod.FREE
+                    )
                 )
                 break  # one free option is enough — permutations are interchangeable
 
@@ -208,7 +213,7 @@ def get_purchase_options_for_card(
                         PurchaseOption(
                             coin_cost=total_coins,
                             trade=trade,
-                            method="trade",
+                            method=PurchaseMethod.TRADE,
                         )
                     )
 
@@ -240,110 +245,8 @@ def get_purchase_options_for_each_card(
     chain_cards: set[str],
 ) -> list[CardPurchaseOptions]:
     return [
-        get_purchase_options_for_card(
+        _get_purchase_options_for_card(
             card, own_resources, trade_state, coins, chain_cards
         )
         for card in cards
     ]
-
-
-# """
-
-# Possible purchase options:
-
-# # Can buy without paying anyone
-# [{
-#     "left_neighbor_id": 0,
-#     "right_neighbor_id": 0,
-# }]
-
-# # Cannot buy even if you pay neighbors
-# [{
-#     "left_neighbor_id": -1,
-#     "right_neighbor_id": -1,
-# }]
-
-# # Can buy with neighbors' resources (list all possible combinations of coins to pay)
-# [
-#     {
-#         "left_neighbor_id": 0,
-#         "right_neighbor_id": 2,
-#     },
-#     {
-#         "left_neighbor_id": 1,
-#         "right_neighbor_id": 0,
-#     },
-# """
-
-
-# def get_purchase_options(
-#     existing_resources: dict[ResourceProduced, int],
-#     neighbor_existing_resources: dict[str, dict[ResourceProduced, int]],
-#     trade_discount: dict[str, bool],
-#     existing_coins: int,
-#     target_card: Card,
-# ) -> list[dict[str, int]]:
-#     resource_cost: dict[Resource, int] = target_card.resource_cost
-#     self_resource_combinations: list[dict[Resource, int]] = get_available_resource_combinations(
-#         existing_resources
-#     )
-#     neighbor_ids = neighbor_existing_resources.keys()
-#     neighbor_resource_combinations: dict[str, list[dict[Resource, int]]] = {
-#         neighbor_id: get_available_resource_combinations(neighbor_existing_resources[neighbor_id])
-#         for neighbor_id in neighbor_ids
-#     }
-#     for resource_combination in self_resource_combinations:
-#         # Can buy without paying anyone
-#         if all(resource_combination[key] >= freq for key, freq in resource_cost.items()):
-#             res = {}
-#             for neighbor_id in neighbor_ids:
-#                 res[neighbor_id] = 0
-#             return res
-
-#         lacked_resources = dict[Resource, int] = {}
-#         for key, freq in resource_cost.items():
-#             if key not in existing_resources or existing_resources[key] < freq:
-#                 lacked_resources[key] = freq - existing_resources[key]
-#         for neighbor_id in neighbor_ids:
-#             if trade_discount[neighbor_id]:
-#                 for resource in lacked_resources:
-#                     if resource in neighbor_resource_combinations[neighbor_id]:
-#                         neighbor_resource_combinations[neighbor_id][resource] -= 1
-
-#     # for card in existing_cards:
-#     #     resource_cost: dict[Resource, int] = target_card.resource_cost
-#     #
-#     #     for resource_combination in self_resource_combinations:
-#     #         if all(resource_combination[key] >= freq for key, freq in resource_cost.items()):
-#     #             return True
-
-#     #     lacked_resources = dict[ResourceProduced, int] = {}
-#     #     for key, freq in resource_cost.items():
-#     #         if key not in existing_resources or existing_resources[key] < freq:
-#     #             can_purchase_with_own_resources = False
-
-
-# def get_available_resource_combinations(
-#     resources_produced: dict[ResourceProduced, int],
-# ) -> list[dict[Resource, int]]:
-#     resources_produced_lst: list[(ResourceProduced, int)] = [
-#         (key, freq) for key, freq in resources_produced.items()
-#     ]
-#     result: list[dict[Resource, int]] = []
-
-#     def backtrack(idx: int, path: dict[Resource, int]) -> None:
-#         if idx == len(resources_produced_lst):
-#             path_copy = path.copy()
-#             result.append(path_copy)
-#             return
-
-#         if resources_produced_lst[idx] is FixedResource:
-#             path[resources_produced_lst[idx].resource] += 1
-#             backtrack(idx + 1, path)
-#         else:
-#             for resource in resources_produced_lst[idx].resources:
-#                 path[resource] += 1
-#                 backtrack(idx + 1, path)
-#                 path[resource] -= 1
-
-#     return result

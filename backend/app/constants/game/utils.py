@@ -55,11 +55,18 @@ class TradeCost:
     cost: int
 
 
+class PurchaseMethod(StrEnum):
+    FREE = "free"
+    TRADE = "trade"
+    COIN = "coin"
+    CHAIN = "chain"
+
+
 @dataclass
 class PurchaseOption:
     coin_cost: int
     trade: dict[str, TradeCost]
-    method: str
+    method: PurchaseMethod
 
 
 @dataclass
