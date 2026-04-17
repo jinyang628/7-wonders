@@ -46,3 +46,9 @@ class PlayerTradeState:
 class PlayerPositionState:
     player_id: str
     neighbors: dict[Direction, str]
+
+
+@dataclass
+class TradeCost:
+    amount: int
+    cost: int

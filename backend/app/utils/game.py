@@ -1,8 +1,9 @@
 from app.constants.game.cards import Resource
-from app.constants.game.utils import PlayerTradeState
+from app.constants.game.utils import (PlayerTradeState, TradeCost,
+                                      TradeRelationship)
 
 
-def get_trade_combinations(
+def _get_trade_combinations_without_cost(
     state: PlayerTradeState, resource: Resource, count: int
 ) -> list[dict[str, dict[Resource, int]]]:
     """
@@ -47,17 +48,40 @@ def get_trade_combinations(
     return combinations
 
 
-def get_trade_cost(state: PlayerTradeState, resource: Resource, count: int) -> int:
-    pass
-    # for neighbor_id, resource_dict in state.available_resources.items():
-    #     if resource in resource_dict:
-    #         count -= resource_dict[resource]
-    #         if count <= 0:
-    #             return 0
-    # return state.trade_costs[neighbor_id].base_cost
+def get_trade_combinations_with_cost(
+    state: PlayerTradeState, resource: Resource, count: int
+) -> list[dict[str, dict[str, int]]]:
+    """
+    Returns all ways to obtain `count` copies of `resource` from neighbors, with cost.
+    Each result is:
+        [
+            {
+                left_neighbor_id:  TradeCost(amount=2, cost=2),
+                right_neighbor_id: TradeCost(amount=1, cost=1),
+            },
+            ...
+        ]
+    """
+    raw_combinations = _get_trade_combinations_without_cost(state, resource, count)
 
-    # rel = state.trade_costs[direction]
-    # return rel.discount_cost if resource in rel.discounted_resources else rel.base_cost
+    result = []
+    for combo in raw_combinations:
+        costed = {}
+        for neighbor_id, resources in combo.items():
+            amount = resources[resource]
+            relationship: TradeRelationship = state.trade_costs[neighbor_id]
+            unit_cost = (
+                relationship.discount_cost
+                if resource in relationship.discounted_resources
+                else relationship.base_cost
+            )
+            costed[neighbor_id] = TradeCost(
+                amount=amount,
+                cost=amount * unit_cost,
+            )
+        result.append(costed)
+
+    return result
 
 
 # from app.models.cards import Card, FixedResource, ResourceProduced
