@@ -1,9 +1,15 @@
+import uuid
+
 from pydantic import BaseModel, Field
 
 from app.constants.game.cards import Age, Effect, Resource, Science
 
 
 class Card(BaseModel):
+    id: str = Field(
+        default_factory=lambda: uuid.uuid4().hex,
+        description="The unique identifier of the card",
+    )
     name: str
     age: Age
     coin_cost: int = Field(default=0, description="The cost of the card in coins")

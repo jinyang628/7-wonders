@@ -10,6 +10,72 @@ class CardType(StrEnum):
     PURPLE = "purple"
 
 
+class CardName(StrEnum):
+    LUMBER_YARD = "Lumber Yard"
+    ORE_VEIN = "Ore Vein"
+    STONE_PIT = "Stone Pit"
+    CLAY_POOL = "Clay Pool"
+    TIMBER_YARD = "Timber Yard"
+    CLAY_PIT = "Clay Pit"
+    EXCAVATION = "Excavation"
+    GLASSWORKS = "Glassworks"
+    PRESS = "Press"
+    LOOM = "Loom"
+    ALTAR = "Altar"
+    THEATER = "Theater"
+    WELL = "Well"
+    BATHS = "Baths"
+    GUARD_TOWER = "Guard Tower"
+    BARRACKS = "Barracks"
+    STOCKADE = "Stockade"
+    SCRIPTORIUM = "Scriptorium"
+    APOTHECARY = "Apothecary"
+    WORKSHOP = "Workshop"
+    TAVERN = "Tavern"
+    WEST_TRADING_POST = "West Trading Post"
+    EAST_TRADING_POST = "East Trading Post"
+    MARKETPLACE = "Marketplace"
+    SAWMILL = "Sawmill"
+    FOUNDRY = "Foundry"
+    QUARRY = "Quarry"
+    BRICKYARD = "Brickyard"
+    COURTHOUSE = "Courthouse"
+    TEMPLE = "Temple"
+    STATUE = "Statue"
+    AQUEDUCT = "Aqueduct"
+    STABLES = "Stables"
+    ARCHERY_RANGE = "Archery Range"
+    WALLS = "Walls"
+    TRAINING_GROUND = "Training Ground"
+    DISPENSARY = "Dispensary"
+    LABORATORY = "Laboratory"
+    LIBRARY = "Library"
+    SCHOOL = "School"
+    CARAVANSERY = "Caravansery"
+    FORUM = "Forum"
+    VINEYARD = "Vineyard"
+    BAZAAR = "Bazaar"
+    GARDENS = "Gardens"
+    SENATE = "Senate"
+    TOWN_HALL = "Town Hall"
+    PANTHEON = "Pantheon"
+    PALACE = "Palace"
+    ARSENAL = "Arsenal"
+    SIEGE_WORKSHOP = "Siege Workshop"
+    FORTIFICATIONS = "Fortifications"
+    CIRCUS = "Circus"
+    CASTRUM = "Castrum"
+    UNIVERSITY = "University"
+    STUDY = "Study"
+    LODGE = "Lodge"
+    ACADEMY = "Academy"
+    OBSERVATORY = "Observatory"
+    LIGHTHOUSE = "Lighthouse"
+    HAVEN = "Haven"
+    CHAMBER_OF_COMMERCE = "Chamber of Commerce"
+    ARENA = "Arena"
+
+
 class Age(IntEnum):
     ONE = 1
     TWO = 2
@@ -63,3 +129,25 @@ class Science(StrEnum):
     TABLET = "Tablet"
     COMPASS = "Compass"
     GEAR = "Gear"
+
+
+CHAINING: dict[CardName, list[CardName]] = {
+    CardName.WELL: [CardName.STATUE],
+    CardName.BATHS: [CardName.AQUEDUCT],
+    CardName.ALTAR: [CardName.PANTHEON],
+    CardName.THEATER: [CardName.GARDENS],
+    CardName.MARKETPLACE: [CardName.CARAVANSERY],
+    CardName.CARAVANSERY: [CardName.LIGHTHOUSE],
+    CardName.EAST_TRADING_POST: [CardName.FORUM],
+    CardName.WEST_TRADING_POST: [CardName.FORUM],
+    CardName.FORUM: [CardName.HAVEN],
+    CardName.APOTHECARY: [CardName.DISPENSARY, CardName.STABLES],
+    CardName.DISPENSARY: [CardName.ARENA, CardName.LODGE],
+    CardName.WORKSHOP: [CardName.ARCHERY_RANGE, CardName.LABORATORY],
+    CardName.LABORATORY: [CardName.SIEGE_WORKSHOP, CardName.OBSERVATORY],
+    CardName.SCRIPTORIUM: [CardName.COURTHOUSE, CardName.LIBRARY],
+    CardName.LIBRARY: [CardName.UNIVERSITY, CardName.SENATE],
+    CardName.SCHOOL: [CardName.ACADEMY, CardName.STUDY],
+    CardName.WALLS: [CardName.FORTIFICATIONS],
+    CardName.TRAINING_GROUND: [CardName.CIRCUS],
+}
